@@ -7,53 +7,57 @@ pipeline {
     }
 
     stages {
-        stage('Clone Repositories') {
+        stage('Checkout Primary Repo') {
             steps {
-                // Clean workspace
-                deleteDir()
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[url: "${env.PRIMARY_REPO}"]]
+                ])
+            }
+        }
 
-                // Clone primary repo (current one)
-                git url: "${PRIMARY_REPO}", branch: 'main'
-
-                // Clone secondary repo
+        stage('Clone Secondary Repo') {
+            steps {
                 dir('secondary') {
-                    git url: "${SECONDARY_REPO}", branch: 'main'
+                    git branch: 'main', url: "${env.SECONDARY_REPO}"
                 }
-
-                echo "Repos cloned:"
-                sh 'ls -l'
-                sh 'ls -l secondary'
             }
         }
 
         stage('Build Artifacts') {
             steps {
-                // Sample Java compilation (adjust for Maven/Gradle if needed)
                 sh '''
                     mkdir -p build
-                    # Compile primary repo Java code
-                    find src -name "*.java" > sources.txt
-                    # Compile secondary repo Java code
-                    find secondary/src -name "*.java" >> sources.txt
 
+                    # Gather all .java files
+                    find src -name '*.java' > sources.txt
+                    find secondary/src -name '*.java' >> sources.txt
+
+                    # Compile using javac
                     javac -d build @sources.txt
                 '''
             }
         }
 
         stage('Archive Artifacts') {
+            when {
+                expression { fileExists('build') }
+            }
             steps {
-                archiveArtifacts artifacts: 'build/**/*', fingerprint: true
+                archiveArtifacts artifacts: 'build/**/*.class', allowEmptyArchive: true
             }
         }
     }
 
     post {
         success {
-            echo "✅ Build successful and artifacts archived!"
+            echo '✅ Build completed successfully.'
         }
         failure {
-            echo "❌ Build failed. Check logs."
+            echo '❌ Build failed. Check logs.'
+        }
+        always {
+            cleanWs()
         }
     }
 }
